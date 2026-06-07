@@ -1,0 +1,26 @@
+[package]
+name = "si-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Unified CLI for the SuperInstance ecosystem — scan, audit, rank, graph, and generate"
+license = "MIT"
+repository = "https://github.com/SuperInstance/si-cli"
+keywords = ["superinstance", "cli", "ecosystem", "capability"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "si"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+petgraph = "0.7"
+walkdir = "2"
+colored = "3"
+anyhow = "1"
+serde_json = "1"
