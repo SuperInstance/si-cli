@@ -1,0 +1,64 @@
+[package]
+name = "si-cli"
+version = "0.1.0"
+layer = "tooling"
+description = "Unified CLI for the SuperInstance ecosystem — capability discovery, dependency graphing, spectral ranking, ecosystem audit, integration suggestions, and conservation law verification"
+
+[provides]
+capabilities = [
+  { name = "capability-scan", type = "command", description = "Recursively scan for CAPABILITY.toml files and validate dependencies" },
+  { name = "dependency-graph", type = "command", description = "Build ASCII, DOT, or JSON dependency graphs from discovered capabilities" },
+  { name = "spectral-rank", type = "command", description = "PageRank-style spectral importance ranking of repos by capability dependencies" },
+  { name = "ecosystem-audit", type = "command", description = "Audit repos for CAPABILITY.toml, INTEGRATION.md, README.md, tests, CI/CD, and license" },
+  { name = "integration-suggest", type = "command", description = "Suggest cross-repo integrations based on capability matching" },
+  { name = "capability-generate", type = "command", description = "Generate CAPABILITY.toml templates interactively or non-interactively" },
+  { name = "conservation-check", type = "command", description = "Verify gamma + eta = total conservation law in fleet.toml or Supabase" },
+  { name = "supabase-sync", type = "module", description = "Sync discovered repos to Supabase fleet registry with language detection" },
+  { name = "supabase-client", type = "module", description = "Blocking REST client for Supabase repos, fleet_budgets, and fleet_events tables" },
+  { name = "toml-parser", type = "module", description = "Parse CAPABILITY.toml and fleet.toml files with validation" },
+]
+
+exports = [
+  "scan::scan_directory",
+  "scan::check_dependencies",
+  "scan::sync_to_supabase",
+  "graph::build_graph",
+  "graph::CapabilityGraph",
+  "graph::GraphFormat",
+  "rank::compute_metrics",
+  "rank::rank_path",
+  "rank::rank_from_supabase",
+  "rank::RepoMetrics",
+  "audit::audit_repo",
+  "audit::audit_all",
+  "audit::log_audit_to_supabase",
+  "audit::AuditResult",
+  "suggest::find_suggestions",
+  "suggest::suggest_path",
+  "suggest::Suggestion",
+  "generate::generate_capability",
+  "generate::write_capability_template",
+  "check::check_fleet",
+  "check::check_conservation",
+  "check::ConservationCheck",
+  "supabase::SupabaseClient",
+  "supabase::RepoRow",
+  "supabase::FleetBudget",
+  "supabase::FleetEvent",
+  "supabase::upsert_repo",
+  "supabase::get_fleet_budgets",
+  "supabase::insert_fleet_event",
+  "supabase::check_conservation",
+  "toml::parse_capability_file",
+  "toml::parse_fleet_file",
+  "toml::CapabilityToml",
+  "toml::FleetToml",
+  "toml::DiscoveredCapability",
+]
+
+[requires]
+optional = [
+  { crate = "supabase", reason = "Fleet registry sync and budget queries require SUPABASE_URL and SUPABASE_SERVICE_KEY" },
+  { crate = "conservation-law-rs", reason = "Conservation check validates gamma + eta = total from fleet.toml" },
+  { crate = "spectral-fleet-rs", reason = "Spectral ranking uses power iteration on dependency adjacency matrix" },
+]
