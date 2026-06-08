@@ -277,3 +277,75 @@ pub fn rank_path(path: &Path) -> Result<Vec<RepoMetrics>> {
     let metrics = compute_metrics(&discovered);
     Ok(metrics)
 }
+
+use crate::supabase::SupabaseClient;
+
+/// Rank agents by querying fleet_budgets from Supabase and running spectral analysis.
+pub fn rank_from_supabase(client: &SupabaseClient) -> anyhow::Result<Vec<RepoMetrics>> {
+    let budgets = client.get_fleet_budgets()?;
+
+    if budgets.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let n = budgets.len();
+
+    // Build adjacency matrix from budget similarity (agents with similar gamma/eta ratios)
+    let mut matrix = vec![vec![0.0; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            if i == j {
+                matrix[i][j] = budgets[i].total_budget;
+            } else {
+                let ratio_i = budgets[i].gamma / budgets[i].total_budget.max(1e-9);
+                let ratio_j = budgets[j].gamma / budgets[j].total_budget.max(1e-9);
+                let diff = (ratio_i - ratio_j).abs();
+                matrix[i][j] = 1.0 / (1.0 + diff); // similarity kernel
+            }
+        }
+    }
+
+    // Power iteration for spectral ranking
+    let mut scores = vec![1.0 / n as f64; n];
+    let damping = 0.85;
+
+    for _ in 0..100 {
+        let mut new_scores = vec![(1.0 - damping) / n as f64; n];
+        for i in 0..n {
+            let contribution = damping * scores[i] / n as f64;
+            for j in 0..n {
+                new_scores[j] += contribution * matrix[i][j];
+            }
+        }
+        let sum: f64 = new_scores.iter().sum();
+        if sum > 0.0 {
+            for s in &mut new_scores {
+                *s /= sum;
+            }
+        }
+        scores = new_scores;
+    }
+
+    let mut metrics: Vec<RepoMetrics> = budgets
+        .into_iter()
+        .zip(scores.into_iter())
+        .map(|(b, score)| RepoMetrics {
+            name: b.agent_id,
+            dependents: 0,
+            provides_count: 0,
+            has_tests: false,
+            has_ci: false,
+            has_readme_over_100: false,
+            raw_score: b.total_budget,
+            spectral_score: score,
+            rank: 0,
+        })
+        .collect();
+
+    metrics.sort_by(|a, b| b.spectral_score.partial_cmp(&a.spectral_score).unwrap_or(std::cmp::Ordering::Equal));
+    for (i, m) in metrics.iter_mut().enumerate() {
+        m.rank = i + 1;
+    }
+
+    Ok(metrics)
+}

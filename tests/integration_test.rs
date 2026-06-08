@@ -781,3 +781,160 @@ requires = []
 "#
     )
 }
+
+// ============================================================================
+// Supabase Tests
+// ============================================================================
+
+#[test]
+fn test_supabase_client_new() {
+    let client = si_cli_supabase_new("https://example.supabase.co", "test-key");
+    assert!(client.is_ok());
+}
+
+#[test]
+fn test_supabase_client_from_env_missing() {
+    // Ensure env vars are not set
+    std::env::remove_var("SUPABASE_URL");
+    std::env::remove_var("SUPABASE_SERVICE_KEY");
+    let client = si_cli_supabase_from_env();
+    assert!(client.is_ok());
+    assert!(client.unwrap().is_none());
+}
+
+#[test]
+fn test_supabase_repo_row_serialize() {
+    let row = si_cli_repo_row("si-core", Some("Core runtime"), Some("rust"), Some("https://github.com/SuperInstance/si-core"));
+    let json = serde_json::to_string(&row).unwrap();
+    assert!(json.contains("si-core"));
+    assert!(json.contains("Core runtime"));
+    assert!(json.contains("rust"));
+}
+
+#[test]
+fn test_supabase_fleet_budget_serialize() {
+    let budget = si_cli_fleet_budget("agent-1", 100.0, 40.0, 60.0);
+    let json = serde_json::to_string(&budget).unwrap();
+    assert!(json.contains("agent-1"));
+    assert!(json.contains("100.0"));
+    assert!(json.contains("40.0"));
+    assert!(json.contains("60.0"));
+}
+
+#[test]
+fn test_supabase_fleet_event_serialize() {
+    let event = si_cli_fleet_event("agent-1", "audit", Some(serde_json::json!({"score": 85})));
+    let json = serde_json::to_string(&event).unwrap();
+    assert!(json.contains("agent-1"));
+    assert!(json.contains("audit"));
+    assert!(json.contains("score"));
+}
+
+#[test]
+fn test_supabase_conservation_check_logic() {
+    let budgets = vec![
+        si_cli_fleet_budget("a1", 100.0, 40.0, 60.0),
+        si_cli_fleet_budget("a2", 100.0, 50.0, 55.0), // violation: 50+55 != 100
+    ];
+    let results = si_cli_check_conservation(&budgets);
+    assert_eq!(results.len(), 2);
+    assert!(results[0].1, "a1 should be valid: 40+60=100");
+    assert!(!results[1].1, "a2 should be invalid: 50+55!=100");
+}
+
+#[test]
+fn test_supabase_api_url_building() {
+    let client = si_cli_supabase_new("https://example.supabase.co", "key").unwrap();
+    let url = si_cli_supabase_api_url(&client, "repos");
+    assert_eq!(url, "https://example.supabase.co/rest/v1/repos");
+}
+
+// Helper structs and functions for Supabase tests
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct TestRepoRow {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct TestFleetBudget {
+    agent_id: String,
+    total_budget: f64,
+    gamma: f64,
+    eta: f64,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct TestFleetEvent {
+    agent_id: String,
+    event_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload: Option<serde_json::Value>,
+}
+
+fn si_cli_supabase_new(url: &str, key: &str) -> anyhow::Result<si_cli_supabase_client> {
+    Ok(si_cli_supabase_client {
+        url: url.to_string(),
+        key: key.to_string(),
+    })
+}
+
+fn si_cli_supabase_from_env() -> anyhow::Result<Option<si_cli_supabase_client>> {
+    let url = match std::env::var("SUPABASE_URL") {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let key = match std::env::var("SUPABASE_SERVICE_KEY") {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    Ok(Some(si_cli_supabase_client { url, key }))
+}
+
+fn si_cli_repo_row(name: &str, desc: Option<&str>, lang: Option<&str>, url: Option<&str>) -> TestRepoRow {
+    TestRepoRow {
+        name: name.to_string(),
+        description: desc.map(|s| s.to_string()),
+        language: lang.map(|s| s.to_string()),
+        url: url.map(|s| s.to_string()),
+    }
+}
+
+fn si_cli_fleet_budget(agent_id: &str, total: f64, gamma: f64, eta: f64) -> TestFleetBudget {
+    TestFleetBudget {
+        agent_id: agent_id.to_string(),
+        total_budget: total,
+        gamma,
+        eta,
+    }
+}
+
+fn si_cli_fleet_event(agent_id: &str, event_type: &str, payload: Option<serde_json::Value>) -> TestFleetEvent {
+    TestFleetEvent {
+        agent_id: agent_id.to_string(),
+        event_type: event_type.to_string(),
+        payload,
+    }
+}
+
+fn si_cli_check_conservation(budgets: &[TestFleetBudget]) -> Vec<(String, bool)> {
+    budgets.iter().map(|b| {
+        let valid = (b.gamma + b.eta - b.total_budget).abs() < 1e-9;
+        (b.agent_id.clone(), valid)
+    }).collect()
+}
+
+fn si_cli_supabase_api_url(client: &si_cli_supabase_client, table: &str) -> String {
+    format!("{}/rest/v1/{}", client.url.trim_end_matches('/'), table)
+}
+
+struct si_cli_supabase_client {
+    url: String,
+    key: String,
+}

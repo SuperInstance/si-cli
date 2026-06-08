@@ -7,9 +7,10 @@ mod graph;
 mod rank;
 mod scan;
 mod suggest;
+mod supabase;
 mod toml;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use std::path::PathBuf;
@@ -45,7 +46,11 @@ enum Commands {
     /// Rank repos by importance using spectral analysis
     Rank {
         /// Directory to scan
+        #[arg(default_value = ".")]
         path: PathBuf,
+        /// Query Supabase fleet_budgets instead of local repos
+        #[arg(long)]
+        from_supabase: bool,
     },
     /// Audit a repo for ecosystem readiness
     Audit {
@@ -66,6 +71,9 @@ enum Commands {
     Check {
         /// Path to fleet.toml or directory containing one
         path: PathBuf,
+        /// Check Supabase fleet_budgets instead of local file
+        #[arg(long)]
+        from_supabase: bool,
     },
     /// Print version info
     Version,
@@ -99,11 +107,11 @@ fn run() -> Result<()> {
     match cli.command {
         Commands::Scan { path } => cmd_scan(&path),
         Commands::Graph { path, format } => cmd_graph(&path, format),
-        Commands::Rank { path } => cmd_rank(&path),
+        Commands::Rank { path, from_supabase } => cmd_rank(&path, from_supabase),
         Commands::Audit { path } => cmd_audit(&path),
         Commands::Suggest { path } => cmd_suggest(&path),
         Commands::Generate { what } => cmd_generate(what),
-        Commands::Check { path } => cmd_check(&path),
+        Commands::Check { path, from_supabase } => cmd_check(&path, from_supabase),
         Commands::Version => cmd_version(),
     }
 }
@@ -120,6 +128,15 @@ fn cmd_scan(path: &std::path::Path) -> Result<()> {
 
     let missing = scan::check_dependencies(&discovered);
     let all_ok = scan::print_dependency_check(&missing);
+
+    // Sync to Supabase if credentials are available
+    if let Some(client) = supabase::SupabaseClient::from_env()? {
+        println!("\n{}", "Syncing to Supabase fleet registry...".dimmed());
+        match scan::sync_to_supabase(&client, &discovered) {
+            Ok(count) => println!("  {} {} repos synced", "✓".green(), count),
+            Err(e) => eprintln!("  {} Supabase sync failed: {}", "✗".red(), e),
+        }
+    }
 
     if !all_ok {
         std::process::exit(1);
@@ -140,9 +157,17 @@ fn cmd_graph(path: &std::path::Path, format: graph::GraphFormat) -> Result<()> {
     Ok(())
 }
 
-fn cmd_rank(path: &std::path::Path) -> Result<()> {
-    let metrics = rank::rank_path(path)?;
-    rank::print_ranked(&metrics);
+fn cmd_rank(path: &std::path::Path, from_supabase: bool) -> Result<()> {
+    if from_supabase {
+        let client = supabase::SupabaseClient::from_env()?.context(
+            "Supabase credentials not found. Set SUPABASE_URL and SUPABASE_SERVICE_KEY."
+        )?;
+        let metrics = rank::rank_from_supabase(&client)?;
+        rank::print_ranked(&metrics);
+    } else {
+        let metrics = rank::rank_path(path)?;
+        rank::print_ranked(&metrics);
+    }
     Ok(())
 }
 
@@ -151,6 +176,13 @@ fn cmd_audit(path: &std::path::Path) -> Result<()> {
         // Single repo audit
         let result = audit::audit_repo(path)?;
         audit::print_audit(&result);
+
+        // Log to Supabase if available
+        if let Some(client) = supabase::SupabaseClient::from_env()? {
+            if let Err(e) = audit::log_audit_to_supabase(&client, &result) {
+                eprintln!("  {} Supabase log failed: {}", "⚠".yellow(), e);
+            }
+        }
 
         if result.score < 50 {
             std::process::exit(1);
@@ -163,6 +195,15 @@ fn cmd_audit(path: &std::path::Path) -> Result<()> {
         } else {
             for result in &results {
                 audit::print_audit(result);
+            }
+
+            // Log all to Supabase if available
+            if let Some(client) = supabase::SupabaseClient::from_env()? {
+                for result in &results {
+                    if let Err(e) = audit::log_audit_to_supabase(&client, result) {
+                        eprintln!("  {} Supabase log failed for {}: {}", "⚠".yellow(), result.path, e);
+                    }
+                }
             }
 
             // Summary
@@ -203,13 +244,33 @@ fn cmd_generate(what: GenerateCommands) -> Result<()> {
     Ok(())
 }
 
-fn cmd_check(path: &std::path::Path) -> Result<()> {
-    let checks = check::check_fleet(path)?;
-    check::print_conservation(&checks);
+fn cmd_check(path: &std::path::Path, from_supabase: bool) -> Result<()> {
+    if from_supabase {
+        let client = supabase::SupabaseClient::from_env()?.context(
+            "Supabase credentials not found. Set SUPABASE_URL and SUPABASE_SERVICE_KEY."
+        )?;
+        let results = client.check_conservation()?;
+        println!("{}", "Conservation Check (Supabase)".bold());
+        println!("{}", "═".repeat(50).dimmed());
+        let mut all_passed = true;
+        for (agent_id, valid) in &results {
+            let icon = if *valid { "✓".green() } else { "✗".red() };
+            println!("  {} {} gamma + eta = total? {}", icon, agent_id.cyan(), if *valid { "YES".green() } else { "NO".red() });
+            if !valid {
+                all_passed = false;
+            }
+        }
+        if !all_passed {
+            std::process::exit(1);
+        }
+    } else {
+        let checks = check::check_fleet(path)?;
+        check::print_conservation(&checks);
 
-    let has_violations = checks.iter().any(|c| !c.passed);
-    if has_violations {
-        std::process::exit(1);
+        let has_violations = checks.iter().any(|c| !c.passed);
+        if has_violations {
+            std::process::exit(1);
+        }
     }
 
     Ok(())

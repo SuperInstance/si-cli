@@ -306,3 +306,27 @@ pub fn audit_all(path: &Path) -> Result<Vec<AuditResult>> {
     results.sort_by_key(|b| std::cmp::Reverse(b.score));
     Ok(results)
 }
+
+use crate::supabase::SupabaseClient;
+
+/// Log an audit result to the Supabase `fleet_events` table.
+pub fn log_audit_to_supabase(
+    client: &SupabaseClient,
+    result: &AuditResult,
+) -> anyhow::Result<()> {
+    let payload = serde_json::json!({
+        "path": result.path,
+        "score": result.score,
+        "checks": result.checks.iter().map(|c| {
+            serde_json::json!({
+                "name": c.name,
+                "passed": c.passed,
+                "message": c.message,
+                "weight": c.weight,
+            })
+        }).collect::<Vec<_>>(),
+    });
+
+    client.insert_fleet_event(&result.path, "audit", Some(payload))?;
+    Ok(())
+}

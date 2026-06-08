@@ -141,3 +141,68 @@ pub fn print_dependency_check(missing: &[(String, String)]) -> bool {
 }
 
 
+
+use crate::supabase::SupabaseClient;
+
+/// Sync discovered capabilities to the Supabase `repos` table.
+/// Returns the number of repos successfully upserted.
+pub fn sync_to_supabase(
+    client: &SupabaseClient,
+    discovered: &[DiscoveredCapability],
+) -> anyhow::Result<usize> {
+    let mut count = 0;
+    for dc in discovered {
+        let parent = dc.path.parent().unwrap_or(std::path::Path::new("."));
+        let name = dc.capability.name.clone();
+        let description = dc.capability.description.clone();
+
+        // Attempt to detect language from file extensions in the repo
+        let language = detect_language(parent);
+
+        // Guess a GitHub URL from repo name (best effort)
+        let url = Some(format!(
+            "https://github.com/SuperInstance/{}",
+            parent.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&name)
+        ));
+
+        client.upsert_repo(&name, description.as_deref(), language.as_deref(), url.as_deref())?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+fn detect_language(dir: &std::path::Path) -> Option<String> {
+    let mut has_rs = false;
+    let mut has_py = false;
+    let mut has_go = false;
+    let mut has_js = false;
+    let mut has_zig = false;
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    match ext {
+                        "rs" => has_rs = true,
+                        "py" => has_py = true,
+                        "go" => has_go = true,
+                        "js" | "ts" => has_js = true,
+                        "zig" => has_zig = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    // Return primary language based on what we found
+    if has_rs { Some("rust".to_string()) }
+    else if has_py { Some("python".to_string()) }
+    else if has_go { Some("go".to_string()) }
+    else if has_js { Some("javascript".to_string()) }
+    else if has_zig { Some("zig".to_string()) }
+    else { None }
+}
