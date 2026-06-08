@@ -1,34 +1,10 @@
 # si-cli
 
-> **Unified CLI for the SuperInstance ecosystem** — scan, audit, rank, graph, and generate your way through 200+ repos.
+**Unified CLI for the SuperInstance ecosystem.** Scan capabilities, build dependency graphs, rank repos by spectral importance, audit ecosystem readiness, suggest integrations, verify conservation laws, and generate templates — all from one command.
 
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+---
 
-`si` is the single command-line tool for anyone working with the [SuperInstance](https://github.com/SuperInstance) ecosystem. Whether you're exploring 200 interdependent repos, auditing a new project for ecosystem readiness, or figuring out which projects should integrate — `si` does it all.
-
-## Table of Contents
-
-- [Install](#install)
-- [Quick Start](#quick-start)
-- [Commands](#commands)
-  - [si scan](#si-scan)
-  - [si graph](#si-graph)
-  - [si rank](#si-rank)
-  - [si audit](#si-audit)
-  - [si suggest](#si-suggest)
-  - [si generate](#si-generate)
-  - [si check](#si-check)
-  - [si version](#si-version)
-- [The Full Workflow](#the-full-workflow)
-- [CAPABILITY.toml Spec](#capabilitytoml-spec)
-- [Fleet.toml Spec](#fleettoml-spec)
-- [Architecture](#architecture)
-- [Connecting to Runtimes](#connecting-to-runtimes)
-- [Development](#development)
-- [License](#license)
-
-## Install
+## Installation
 
 ```bash
 # From source
@@ -36,94 +12,111 @@ git clone https://github.com/SuperInstance/si-cli.git
 cd si-cli
 cargo install --path .
 
-# Or directly from GitHub
-cargo install --git https://github.com/SuperInstance/si-cli
-```
-
-Requires Rust 1.70+.
-
-```bash
 # Verify
-si version
-# si-cli v0.1.0
-#   Part of the SuperInstance ecosystem ⟁
+si --version
 ```
 
-## Quick Start
+### Prerequisites
 
-```bash
-# Scan your ecosystem for capabilities
-si scan ./my-ecosystem
+- Rust 1.70+ (edition 2021)
+- Optional: `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` environment variables for fleet registry sync
 
-# Visualize dependencies
-si graph ./my-ecosystem
-
-# Find the most important repos
-si rank ./my-ecosystem
-
-# Audit a repo for readiness
-si audit ./my-ecosystem/my-repo
-
-# Get integration suggestions
-si suggest ./my-ecosystem
-
-# Generate a new CAPABILITY.toml
-si generate capability my-new-project
-
-# Verify conservation laws in a fleet config
-si check ./fleet-config
-```
+---
 
 ## Commands
 
-### `si scan`
+`si` provides 8 subcommands:
 
-Recursively scan a directory for `CAPABILITY.toml` files, parse them, and print a table of discovered capabilities. Exit code 0 if all dependencies are satisfied, 1 if any dependency is missing.
+| Command | Description |
+|---------|-------------|
+| `si scan` | Recursively discover `CAPABILITY.toml` files and check dependencies |
+| `si graph` | Build and output a dependency graph (ASCII, DOT, or JSON) |
+| `si rank` | Rank repos by importance using spectral analysis |
+| `si audit` | Audit a repo for ecosystem readiness (scored 0–100) |
+| `si suggest` | Suggest integrations between repos based on capability matching |
+| `si generate` | Generate template files (`CAPABILITY.toml`) |
+| `si check` | Verify conservation laws (γ + H = total) in fleet configs |
+| `si version` | Print version info |
+
+---
+
+## Command Reference
+
+### `si scan` — Discover Capabilities
+
+Recursively scans a directory for `CAPABILITY.toml` files, validates them, checks that all required capabilities are satisfied by discovered providers, and optionally syncs to Supabase.
 
 ```bash
-si scan ./ecosystem
+# Scan the current directory
+si scan .
+
+# Scan a specific path
+si scan ~/repos/superinstance
 ```
 
-**Output:**
+**Output example:**
 
 ```
-Scanning: ./ecosystem
-NAME                           VERSION      PROVIDES                                 REQUIRES
+Scanning: ~/repos/superinstance
+NAME                           VERSION     PROVIDES                                 REQUIRES
 ──────────────────────────────────────────────────────────────────────────────────────────────────
-si-core                        1.0.0        agent-runtime, conservation              —
-si-auth                        0.3.0        auth                                     agent-runtime
-si-storage                     0.2.0        storage, persistence                     agent-runtime
-si-api                         0.5.0        api, rest                                auth, storage
-si-web                         0.1.0        web, frontend                            api
+si-cli                         0.1.0       cli, fleet-management                     toml-parsing, conservation
+si-fleet-api                   1.0.0       rest-api, fleet-api                       supabase-client
+conservation-law               2.0.0       conservation, budget-enforcement          —
 ──────────────────────────────────────────────────────────────────────────────────────────────────
-5 capabilities discovered
+3 capabilities discovered
 
 ✓ All dependencies satisfied.
 ```
 
-If a dependency is missing:
+**With Supabase sync:**
 
+When `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are set, `si scan` automatically upserts discovered repos to the `repos` table:
+
+```bash
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_KEY="your-service-role-key"
+si scan ~/repos/superinstance
+
+# Output includes:
+# Syncing to Supabase fleet registry...
+#   ✓ 12 repos synced
 ```
-✗ 2 unsatisfied dependencies:
-  si-web requires api (not provided by any repo)
-  si-frontend requires auth (not provided by any repo)
+
+**CAPABILITY.toml format:**
+
+```toml
+# CAPABILITY.toml — SuperInstance Ecosystem
+name = "si-cli"
+version = "0.1.0"
+description = "Unified CLI for the SuperInstance ecosystem"
+
+provides = [
+    "cli",
+    "fleet-management",
+]
+
+requires = [
+    "toml-parsing",
+    "conservation",
+]
 ```
 
-**Exit codes:** 0 = all satisfied, 1 = missing dependencies.
+---
 
-### `si graph`
+### `si graph` — Dependency Graph
 
-Read all `CAPABILITY.toml` files and build a dependency graph. Output in three formats:
+Build a dependency graph from discovered capabilities. Output in three formats:
 
 ```bash
 # ASCII art (default)
-si graph ./ecosystem
+si graph ~/repos/superinstance
 
 # Graphviz DOT format
-si graph ./ecosystem --format dot
+si graph ~/repos/superinstance --format dot
 
 # JSON adjacency list
-si graph ./ecosystem --format json
+si graph ~/repos/superinstance --format json
 ```
 
 **ASCII output:**
@@ -131,165 +124,195 @@ si graph ./ecosystem --format json
 ```
 Dependency Graph
 ════════════════════════════════════════════════════════════
-  si-core (no dependencies)
-  si-auth depends on:
-    └─► si-core
-  si-storage depends on:
-    └─► si-core
-  si-api depends on:
-    └─► si-auth
-    └─► si-storage
-  si-web depends on:
-    └─► si-api
+  si-cli depends on:
+    └─► conservation-law
+    └─► toml-parsing
+  si-fleet-api depends on:
+    └─► supabase-client
+  conservation-law (no dependencies)
 
 Reverse Dependencies
 ════════════════════════════════════════════════════════════
-  si-core ← used by: si-auth, si-storage
-  si-auth ← used by: si-api
-  si-storage ← used by: si-api
-  si-api ← used by: si-web
-  si-web (nothing depends on it)
+  conservation-law ← used by: si-cli, si-fleet-api
+  si-cli (nothing depends on it)
+  si-fleet-api (nothing depends on it)
 ```
 
 **DOT output** (pipe to Graphviz):
 
 ```bash
-si graph ./ecosystem --format dot | dot -Tpng > deps.png
+si graph ~/repos/superinstance --format dot | dot -Tpng -o graph.png
 ```
 
 **JSON output:**
 
 ```json
 {
-  "si-api": ["si-auth", "si-storage"],
-  "si-auth": ["si-core"],
-  "si-core": [],
-  "si-storage": ["si-core"],
-  "si-web": ["si-api"]
+  "conservation-law": [],
+  "si-cli": ["conservation-law"],
+  "si-fleet-api": ["supabase-client"]
 }
 ```
 
-### `si rank`
+---
 
-Rank repos by importance using spectral analysis (power iteration / PageRank-style). The ranking considers:
+### `si rank` — Spectral Importance Ranking
 
-- **How many other repos depend on this one** (in-degree centrality)
-- **How many capabilities it provides** (breadth)
-- **Maturity signals** (has tests, has CI, has README > 100 lines)
+Rank repos by importance using PageRank-style spectral analysis on the capability dependency graph. Considers:
+
+- Number of dependents (repos that depend on this one)
+- Number of capabilities provided
+- Whether the repo has tests, CI, and documentation
+- Eigenvector centrality on the dependency graph
 
 ```bash
-si rank ./ecosystem
+# Rank local repos
+si rank ~/repos/superinstance
+
+# Rank agents from Supabase fleet_budgets
+si rank --from-supabase
 ```
 
 **Output:**
 
 ```
 Ecosystem Importance Ranking
-══════════════════════════════════════════════════════════════════════
-  Rank Name                       Score     Dep      Prov  Tests CI     Spectral
-  ──────────────────────────────────────────────────────────────────────────────
-  ★ #1  si-core                    45.0     2        2      ✓    ✗      0.321543
-  ● #2  si-auth                    25.0     1        1      ✓    ✓      0.218732
-  ● #3  si-storage                 25.0     1        2      ✓    ✗      0.198451
-    #4  si-api                     20.0     0        2      ✗    ✗      0.145892
-    #5  si-web                     15.0     0        2      ✗    ✗      0.115382
-  ──────────────────────────────────────────────────────────────────────────────
+═══════════════════════════════════════════════════════════════════════
+  Rank Name                      Score    Dep      Prov   Tests  CI     Spectral
+  ──────────────────────────────────────────────────────────────────────────────────
+  ★ #1  conservation-law         55.0     8        3      ✓      ✓      0.284731
+  ● #2  si-fleet-api             40.0     3        2      ✓      ✓      0.213054
+  ● #3  si-cli                   25.0     0        2      ✓      ✓      0.178543
+     #4  si-runtime-go           15.0     0        1      ✓      ✗      0.109872
+     #5  ecosystem-dashboard     5.0      0        1      ✗      ✗      0.067421
+  ──────────────────────────────────────────────────────────────────────────────────
 ```
 
-The ★ marks the #1 ranked repo (most critical to the ecosystem). Repos in the top 3 get a ● badge.
+**Scoring formula:**
 
-### `si audit`
+| Factor | Weight |
+|--------|--------|
+| Dependents | 10 pts each |
+| Capabilities provided | 5 pts each |
+| Has tests | 15 pts |
+| Has CI | 10 pts |
+| README > 100 lines | 5 pts |
 
-Check a repo (or all repos in a directory) for ecosystem readiness. Scores 0-100 based on:
+The spectral score uses power iteration with damping factor 0.85, plus bonus weights for provides/tests/CI/README.
 
-| Check | Points |
-|-------|--------|
-| Has valid CAPABILITY.toml | 25 |
-| Has INTEGRATION.md (> 50 lines) | 15 |
-| Has README.md (> 100 lines) | 15 |
-| Has tests | 20 |
-| Has CI (.github/workflows) | 15 |
-| Has license file | 10 |
+---
+
+### `si audit` — Ecosystem Readiness
+
+Audit a repo or directory of repos for ecosystem readiness. Checks six criteria and produces a scored report (0–100).
 
 ```bash
 # Audit a single repo
-si audit ./ecosystem/si-core
+si audit ~/repos/superinstance/si-cli
 
 # Audit all repos in a directory
-si audit ./ecosystem
+si audit ~/repos/superinstance
 ```
+
+**Scoring breakdown:**
+
+| Check | Weight | Criteria |
+|-------|--------|----------|
+| CAPABILITY.toml | 25 pts | Exists and is valid TOML with `name` and `version` |
+| INTEGRATION.md | 15 pts | Exists and is > 50 lines |
+| README.md | 15 pts | Exists and is > 100 lines |
+| Tests | 20 pts | Has `#[test]`, `tests/` dir, or other test indicators |
+| CI/CD | 15 pts | Has `.github/workflows/` directory |
+| License | 10 pts | Has LICENSE file |
 
 **Output:**
 
 ```
-Audit: si-core
-════════════════════════════════════════════════════════════
-  ✓ CAPABILITY.toml          Valid — provides 2 capabilities, requires 0  [25pts]
-  ✓ INTEGRATION.md           78 lines                                      [15pts]
-  ✓ README.md                245 lines                                     [15pts]
-  ✓ Tests                    12 test(s) found                              [20pts]
-  ✓ CI/CD                    2 workflow(s)                                 [15pts]
-  ✓ License                  License file present                          [10pts]
-──────────────────────────────────────────────────────────
-  Score: 100/100
+Audit: si-cli
+════════════════════════════════════════════════════════════════════
+  ✓ CAPABILITY.toml         Valid — provides 2 capabilities, requires 2   [25pts]
+  ✓ INTEGRATION.md          87 lines                                       [15pts]
+  ✓ README.md               340 lines                                      [15pts]
+  ✓ Tests                   12 test(s) found                               [20pts]
+  ✓ CI/CD                   1 workflow(s)                                  [15pts]
+  ✗ License                 No license file                                [10pts]
+──────────────────────────────────────────────────────────────────────────
+  Score: 90/100
   Grade: A
 ```
 
-**Exit codes:** 0 = all repos ≥ 50, 1 = any repo < 50.
+**Supabase logging:**
 
-### `si suggest`
-
-Based on capability matching, suggest which repos should integrate. If repo A provides "conservation" and repo B requires "conservation", the tool suggests the integration.
+When Supabase credentials are configured, audit results are logged to the `fleet_events` table with event type `"audit"`.
 
 ```bash
-si suggest ./ecosystem
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_KEY="your-service-role-key"
+si audit ~/repos/superinstance
+# Each audit result is logged to fleet_events
+```
+
+**Exit codes:**
+
+- `0` — All repos score ≥ 50
+- `1` — Any repo scores < 50
+
+---
+
+### `si suggest` — Integration Suggestions
+
+Analyze capability graphs to suggest integrations between repos. Finds two types of suggestions:
+
+1. **Direct matches**: Repo A provides capability X, Repo B requires X
+2. **Potential integrations**: Repo A provides capability X that no one requires yet — suggest it to other repos
+
+```bash
+si suggest ~/repos/superinstance
 ```
 
 **Output:**
 
 ```
 Integration Suggestions
-══════════════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════════════════
 
-  Capability: agent-runtime
-    → si-auth should integrate with si-core
-      si-core provides 'agent-runtime', si-auth requires 'agent-runtime'
-    → si-storage should integrate with si-core
-      si-core provides 'agent-runtime', si-storage requires 'agent-runtime'
+  Capability: conservation
+    → conservation-law should integrate with si-cli
+      conservation-law provides 'conservation', si-cli requires 'conservation'
+    → conservation-law should integrate with si-fleet-api
+      conservation-law provides 'conservation', si-fleet-api requires 'conservation'
 
-  Capability: api
-    → si-web should integrate with si-api
-      si-api provides 'api', si-web requires 'api'
+  Capability: supabase-client
+    → si-fleet-api should integrate with ecosystem-dashboard
+      si-fleet-api provides 'supabase-client' — ecosystem-dashboard could benefit from integrating it
 
-  Capability: auth
-    → si-api should integrate with si-auth
-      si-auth provides 'auth', si-api requires 'auth'
-
-  ─ 4 suggestion(s) total
+  ─ 5 suggestion(s) total
 ```
 
-### `si generate`
+---
 
-Generate template files for new projects.
+### `si generate` — Generate Templates
+
+Generate `CAPABILITY.toml` templates:
 
 ```bash
-# Generate a CAPABILITY.toml template (non-interactive)
-si generate capability my-new-project
+# Generate a basic template
+si generate capability my-new-repo
 
-# Interactive mode — prompts for fields
-si generate capability my-new-project --interactive
+# Interactive mode — prompts for each field
+si generate capability my-new-repo --interactive
 
-# Specify output path
-si generate capability my-new-project --output ./my-repo/CAPABILITY.toml
+# Write to a specific path
+si generate capability my-new-repo -o /path/to/repo/CAPABILITY.toml
 ```
 
-**Non-interactive output:**
+**Non-interactive output** (written to `CAPABILITY.toml`):
 
 ```toml
 # CAPABILITY.toml — SuperInstance Ecosystem
 # Generated by si-cli
 
-name = "my-new-project"
+name = "my-new-repo"
 version = "0.1.0"
 
 provides = []
@@ -300,347 +323,317 @@ requires = []
 **Interactive mode:**
 
 ```
-Version [0.1.0]: 1.0.0
-Description: My awesome project
+Version [0.1.0]: 2.0.0
+Description: My awesome repo
 Provides (one per line, empty line to finish):
-  → cool-feature
-  → another-feature
+  → http-server
+  → rest-api
   →
 Requires (one per line, empty line to finish):
-  → agent-runtime
+  → database
   →
 ✓ Generated CAPABILITY.toml
 ```
 
-### `si check`
+---
 
-Verify conservation laws across a fleet configuration. Reads a `fleet.toml` file and checks that **γ + H = total** for each agent's budget.
+### `si check` — Conservation Law Verification
 
-```bash
-# Check a specific fleet file
-si check ./fleet.toml
-
-# Check fleet.toml in a directory
-si check ./config/
-```
-
-**Output (all passing):**
-
-```
-Conservation Law Verification (γ + H = total)
-════════════════════════════════════════════════════════════
-  Agent                          γ               H          Total          γ+H        Status
-  ──────────────────────────────────────────────────────────────────────────────────────
-  agent-1                     0.5000        0.3000        0.8000        0.8000 ✓ OK
-  agent-2                     0.2000        0.6000        0.8000        0.8000 ✓ OK
-  ──────────────────────────────────────────────────────────────────────────────────────
-  ✓ All 2 agents pass conservation checks.
-```
-
-**Output (with violation):**
-
-```
-  ✗ agent-bad          0.5000        0.3000        1.0000        0.8000 ✗ Δ=0.200000
-  ──────────────────────────────────────────────────────────────────────────────────────
-  ✗ 1/3 agents FAIL conservation checks.
-```
-
-**Exit codes:** 0 = all pass, 1 = violations detected.
-
-### `si version`
-
-Print version info.
+Verify the conservation law **γ + H = total** in fleet configurations.
 
 ```bash
-si version
-# si-cli v0.1.0
-#   Part of the SuperInstance ecosystem ⟁
+# Check a local fleet.toml file
+si check /path/to/fleet.toml
+
+# Check a directory (looks for fleet.toml inside)
+si check /path/to/fleet-directory/
+
+# Check Supabase fleet_budgets
+si check --from-supabase
 ```
 
-## The Full Workflow
-
-Here's a complete walkthrough of managing a SuperInstance ecosystem:
-
-### 1. Discover What You Have
-
-You've just cloned 50 repos into `~/superinstance`. Start by scanning:
-
-```bash
-si scan ~/superinstance
-```
-
-This shows every repo that has a `CAPABILITY.toml`, what it provides, and what it needs. If any dependency is missing, the exit code is 1 — useful in CI:
-
-```bash
-si scan ~/superinstance || echo "Missing dependencies!"
-```
-
-### 2. Map the Dependencies
-
-Now visualize how repos connect:
-
-```bash
-# Quick ASCII view
-si graph ~/superinstance
-
-# Generate a PNG for documentation
-si graph ~/superinstance --format dot | dot -Tpng > ecosystem-graph.png
-
-# Export JSON for your own tooling
-si graph ~/superinstance --format json > deps.json
-```
-
-### 3. Find the Most Important Repos
-
-Not all repos are equal. Some are foundational — everything depends on them. Find out which:
-
-```bash
-si rank ~/superinstance
-```
-
-The top-ranked repo is your keystone. If it breaks, everything breaks. Invest in its tests, its CI, its documentation.
-
-### 4. Audit for Readiness
-
-Before onboarding a new repo or releasing a new version, run an audit:
-
-```bash
-si audit ~/superinstance/si-core
-```
-
-The 0-100 score tells you at a glance how "ecosystem-ready" a repo is. Anything below 50 fails CI:
-
-```bash
-si audit ~/superinstance/my-repo || exit 1
-```
-
-### 5. Discover Integration Opportunities
-
-You've added a new repo. What should it integrate with?
-
-```bash
-si suggest ~/superinstance
-```
-
-The tool matches providers with consumers across the entire ecosystem, surfacing integration suggestions you might have missed.
-
-### 6. Start a New Project
-
-```bash
-mkdir my-new-repo && cd my-new-repo
-si generate capability my-new-repo --interactive
-# Fill in the prompts...
-```
-
-### 7. Verify Fleet Configs
-
-For agents running in production, verify that budgets are conserved:
-
-```bash
-si check ./fleet-config
-```
-
-Any violation of **γ + H = total** is flagged immediately.
-
-### CI Integration
-
-Put it all together in a GitHub Action:
-
-```yaml
-name: Ecosystem Health
-on: [push, pull_request]
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install --git https://github.com/SuperInstance/si-cli
-      - name: Scan dependencies
-        run: si scan .
-      - name: Audit readiness
-        run: si audit .
-      - name: Check conservation
-        run: si check .
-```
-
-## CAPABILITY.toml Spec
-
-Every repo in the SuperInstance ecosystem should have a `CAPABILITY.toml` at its root:
-
-```toml
-name = "si-core"
-version = "1.0.0"
-description = "Core agent runtime for the SuperInstance ecosystem"
-
-provides = [
-    "agent-runtime",
-    "conservation",
-    "budget-allocation",
-]
-
-requires = [
-    "logging",
-    "configuration",
-]
-```
-
-### Fields
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | ✓ | Unique identifier for this project |
-| `version` | string | ✓ | Semantic version |
-| `description` | string | | Human-readable description |
-| `provides` | string[] | | Capabilities this project exports |
-| `requires` | string[] | | Capabilities this project needs from others |
-
-### Convention
-
-- Capability names are lowercase, hyphen-separated: `agent-runtime`, `conservation`, `rest-api`
-- A project can provide multiple capabilities
-- A project can require multiple capabilities
-- Circular dependencies are allowed but discouraged (the graph command will show them)
-
-## Fleet.toml Spec
-
-For conservation law verification, a `fleet.toml` describes agent budgets:
+**fleet.toml format:**
 
 ```toml
 [fleet]
 name = "production-fleet"
-version = "1.0.0"
+version = "1.0"
 
 [[agents]]
 name = "agent-alpha"
-gamma = 0.5
-h = 0.3
-total = 0.8
-capabilities = ["agent-runtime", "conservation"]
+gamma = 143.0
+h = 82.0
+total = 225.0
+capabilities = ["compute", "network"]
 
 [[agents]]
 name = "agent-beta"
-gamma = 0.2
-h = 0.6
-total = 0.8
-capabilities = ["storage", "persistence"]
+gamma = 60.0
+h = 40.0
+total = 100.0
+capabilities = ["storage"]
 ```
 
-### Conservation Law
-
-For each agent, the following must hold:
+**Output:**
 
 ```
-γ (gamma) + H (entropy) = total (budget)
+Conservation Law Verification (γ + H = total)
+════════════════════════════════════════════════════════════════════════
+  Agent                          γ           H           Total       γ+H         Status
+  ──────────────────────────────────────────────────────────────────────────────────────
+  agent-alpha                    143.0000    82.0000     225.0000    225.0000    ✓ OK
+  agent-beta                     60.0000     40.0000     100.0000    100.0000    ✓ OK
+  ──────────────────────────────────────────────────────────────────────────────────────
+  ✓ All 2 agents pass conservation checks.
 ```
 
-The `si check` command verifies this equality with a tolerance of 10⁻¹⁰.
+**With violations:**
+
+```
+  agent-gamma                    50.0000     30.0000     100.0000    80.0000     ✗ Δ=20.000000
+  ...
+  ✗ 1/3 agents FAIL conservation checks.
+```
+
+**Supabase check:**
+
+```bash
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_KEY="your-service-role-key"
+si check --from-supabase
+
+Conservation Check (Supabase)
+════════════════════════════════════════
+  ✓ agent-alpha gamma + eta = total? YES
+  ✓ agent-beta gamma + eta = total? YES
+```
+
+---
+
+## Supabase Integration
+
+`si-cli` integrates with Supabase for fleet registry management. Set these environment variables:
+
+```bash
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_KEY="eyJhbGciOiJI..."
+```
+
+**Tables used:**
+
+| Table | Operations |
+|-------|------------|
+| `repos` | Upsert from `si scan` |
+| `fleet_budgets` | Read from `si check --from-supabase` and `si rank --from-supabase` |
+| `fleet_events` | Insert from `si audit` (event_type `"audit"`) |
+
+**When credentials are not set**, Supabase features are silently skipped — all commands work offline.
+
+---
 
 ## Architecture
 
 ```
-si-cli/
-├── Cargo.toml
-├── src/
-│   ├── main.rs          # CLI entry point, clap parser
-│   ├── scan.rs          # CAPABILITY.tomL scanning & dependency checking
-│   ├── graph.rs         # Dependency graph (petgraph) + DOT/ASCII/JSON output
-│   ├── rank.rs          # Spectral ranking via power iteration
-│   ├── audit.rs         # Ecosystem readiness audit (0-100 scoring)
-│   ├── suggest.rs       # Provider-consumer matching for integration suggestions
-│   ├── generate.rs      # CAPABILITY.toml template generation
-│   ├── check.rs         # Fleet conservation law verification
-│   └── toml.rs          # TOML parsing types & helpers
-├── tests/
-│   └── integration_test.rs  # 16 integration tests
-└── README.md
+src/
+├── main.rs          # CLI entry point, command dispatch
+├── audit.rs         # Ecosystem readiness auditing
+├── check.rs         # Conservation law verification
+├── generate.rs      # Template generation
+├── graph.rs         # Dependency graph (ASCII/DOT/JSON)
+├── rank.rs          # Spectral importance ranking
+├── scan.rs          # CAPABILITY.toml discovery and Supabase sync
+├── suggest.rs       # Integration suggestion engine
+├── supabase.rs      # Supabase REST client
+└── toml.rs          # TOML parsing for CAPABILITY.toml and fleet.toml
 ```
 
-### Key Design Decisions
+**Key types:**
 
-1. **Real files, not mocks** — All commands work with actual files on disk. Tests create temp directories with real `CAPABILITY.toml` files.
+```rust
+// from toml.rs
+pub struct CapabilityToml {
+    pub name: String,
+    pub version: String,
+    pub provides: Vec<String>,
+    pub requires: Vec<String>,
+    pub description: Option<String>,
+}
 
-2. **Colored output** — Green for good, red for errors, yellow for warnings. Respects `NO_COLOR` environment variable.
+pub struct FleetToml {
+    pub fleet: FleetMeta,
+    pub agents: Vec<AgentDef>,
+}
 
-3. **Exit codes** — 0 = success, 1 = errors found (missing deps, audit failures, conservation violations), 2 = CLI misuse.
+pub struct AgentDef {
+    pub name: String,
+    pub gamma: f64,
+    pub h: f64,
+    pub total: f64,
+    pub capabilities: Vec<String>,
+}
 
-4. **Spectral ranking** — Uses power iteration (PageRank-style) on the dependency graph, augmented with maturity signals (tests, CI, docs).
+// from check.rs
+pub struct ConservationCheck {
+    pub agent_name: String,
+    pub gamma: f64,
+    pub h: f64,
+    pub total: f64,
+    pub computed_total: f64,
+    pub violation: f64,
+    pub passed: bool,
+}
 
-5. **Petgraph** — The `petgraph` crate handles graph construction and DOT output. It's battle-tested and efficient.
+// from rank.rs
+pub struct RepoMetrics {
+    pub name: String,
+    pub dependents: usize,
+    pub provides_count: usize,
+    pub has_tests: bool,
+    pub has_ci: bool,
+    pub has_readme_over_100: bool,
+    pub raw_score: f64,
+    pub spectral_score: f64,
+    pub rank: usize,
+}
 
-## Connecting to Runtimes
+// from audit.rs
+pub struct AuditResult {
+    pub path: String,
+    pub score: u8,
+    pub checks: Vec<Check>,
+}
 
-The SuperInstance ecosystem spans multiple language runtimes:
-
-- **[si-core-c](https://github.com/SuperInstance/si-core-c)** — C implementation of the core agent runtime
-- **[si-runtime-js](https://github.com/SuperInstance/si-runtime-js)** — JavaScript/TypeScript runtime for Node.js and browsers
-- **[si-runtime-zig](https://github.com/SuperInstance/si-runtime-zig)** — Zig runtime for high-performance systems
-
-Each runtime has its own `CAPABILITY.toml`:
-
-```toml
-# si-core-c/CAPABILITY.toml
-name = "si-core-c"
-version = "0.1.0"
-provides = ["agent-runtime"]
-requires = []
+// from supabase.rs
+pub struct FleetBudget {
+    pub agent_id: String,
+    pub total_budget: f64,
+    pub gamma: f64,
+    pub eta: f64,
+}
 ```
 
-When you run `si scan` across the entire ecosystem, you see how these runtimes relate:
+---
 
-```
-NAME                           VERSION      PROVIDES                                 REQUIRES
-──────────────────────────────────────────────────────────────────────────────────────────────────
-si-core-c                      0.1.0        agent-runtime                            —
-si-runtime-js                  0.2.0        agent-runtime, js-bindings               agent-runtime
-si-runtime-zig                 0.3.0        agent-runtime, zig-native                agent-runtime
-```
+## Working Examples
 
-The `si graph` command shows which runtimes depend on the C core:
-
-```
-  si-core-c (no dependencies)
-  si-runtime-js depends on:
-    └─► si-core-c
-  si-runtime-zig depends on:
-    └─► si-core-c
-```
-
-And `si rank` confirms what you'd expect — the C core is the most important repo in the ecosystem:
-
-```
-  ★ #1  si-core-c               65.0     2        1      ✓    ✓      0.412089
-  ● #2  si-runtime-js           40.0     0        2      ✓    ✓      0.298312
-  ● #3  si-runtime-zig          35.0     0        2      ✓    ✗      0.289599
-```
-
-## Development
+### Full Ecosystem Scan Pipeline
 
 ```bash
-# Build
-cargo build
+#!/bin/bash
+# Scan, audit, rank, and check an entire ecosystem
+ECO_DIR=~/repos/superinstance
 
-# Run tests
-cargo test
+echo "=== Scanning ==="
+si scan "$ECO_DIR"
 
-# Lint
-cargo clippy -- -D warnings
+echo ""
+echo "=== Auditing ==="
+si audit "$ECO_DIR"
 
-# Format
-cargo fmt
+echo ""
+echo "=== Ranking ==="
+si rank "$ECO_DIR"
 
-# Install locally
-cargo install --path .
+echo ""
+echo "=== Dependency Graph ==="
+si graph "$ECO_DIR" --format json > deps.json
+echo "Graph saved to deps.json"
+
+echo ""
+echo "=== Conservation Check ==="
+si check "$ECO_DIR"
 ```
 
-### Adding a New Command
+### Generate a CAPABILITY.toml for a New Repo
 
-1. Create `src/new_command.rs` with your implementation
-2. Add `mod new_command;` to `src/main.rs`
-3. Add a new variant to the `Commands` enum in `main.rs`
-4. Add the handler in the `run()` function
-5. Write tests in `tests/integration_test.rs`
+```bash
+#!/bin/bash
+# Create a new repo with proper ecosystem metadata
+mkdir my-agent && cd my-agent
+si generate capability my-agent --interactive
+# Fill in: version, description, provides, requires
+cat CAPABILITY.toml
+```
+
+### CI Integration: Fail on Low Audit Score
+
+```yaml
+# .github/workflows/ecosystem-audit.yml
+name: Ecosystem Audit
+on: [push]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install si-cli
+        run: cargo install --git https://github.com/SuperInstance/si-cli
+      - name: Run audit
+        run: si audit .  # exits 1 if score < 50
+      - name: Check conservation
+        run: si check .
+```
+
+### Custom Graph Visualization
+
+```bash
+# Generate DOT and render as SVG
+si graph ~/repos/superinstance --format dot > ecosystem.dot
+dot -Tsvg ecosystem.dot -o ecosystem.svg
+
+# Generate JSON and filter with jq
+si graph ~/repos/superinstance --format json | jq '.["conservation-law"]'
+```
+
+---
+
+## Conservation Law
+
+The core invariant enforced by `si check`:
+
+```
+γ + H = C
+
+Where:
+  γ (gamma) = productive energy (useful compute)
+  H (eta)   = entropy / waste budget
+  C         = total capacity (fixed)
+```
+
+This law is checked with tolerance `1e-10`. Any violation causes the command to exit with code 1.
+
+---
+
+## Dependencies
+
+| Crate | Purpose |
+|-------|---------|
+| `clap` | CLI argument parsing with derive macros |
+| `colored` | Terminal color output |
+| `toml` | TOML parsing |
+| `serde` | Serialization/deserialization |
+| `serde_json` | JSON output for graphs |
+| `anyhow` | Error handling |
+| `reqwest` | HTTP client for Supabase |
+| `petgraph` | Graph data structures and algorithms |
+| `walkdir` | Recursive directory traversal |
+
+---
+
+## Related Repos
+
+| Repo | Language | Description |
+|------|----------|-------------|
+| [`conservation-law`](https://github.com/SuperInstance/conservation-law) | Rust | Core conservation law crate |
+| [`si-fleet-api`](https://github.com/SuperInstance/si-fleet-api) | TypeScript | REST API for fleet management |
+| [`si-conservation-python`](https://github.com/SuperInstance/si-conservation-python) | Rust/Python | PyO3 Python bindings for conservation law |
+| [`si-runtime-python`](https://github.com/SuperInstance/si-runtime-python) | Python | Pure Python runtime |
+| [`si-runtime-go`](https://github.com/SuperInstance/si-runtime-go) | Go | Go runtime |
+| [`ecosystem-dashboard`](https://github.com/SuperInstance/ecosystem-dashboard) | HTML/JS | Live ecosystem dashboard |
+| [`agent-operations`](https://github.com/SuperInstance/agent-operations) | Docs | Strategic operations hub |
+
+---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT
